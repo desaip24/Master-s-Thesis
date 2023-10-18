@@ -1,0 +1,444 @@
+\chapter{Embree API Integration: Ray Tracing and Mesh Data Structures} \label{Chapter4}
+
+\section{Problem Formulation} \label{sec:Problem Formulation}
+Isosurface extraction is a fundamental process in computer graphics and scientific visualization. It generates an isosurface representing a particular scalar value within a three-dimensional field. This scalar field can be derived from various sources, such as medical imaging data, geospatial datasets, or computational fluid dynamics simulations.
+
+The primary challenge in isosurface extraction is to generate a mesh that accurately represents the underlying data. This mesh should capture the intricate details of the scalar field and be computationally efficient to render and process.
+
+\subsection{Mesh Generation} The quality of the generated mesh is paramount. An ideal mesh should:
+
+\begin{itemize}
+    \item Accurately represent the scalar field's features, both large and small.
+    \item Preserve sharp features without introducing artifacts.
+    \item Be topologically consistent and watertight, ensuring no gaps or overlaps in the mesh.
+    \item Minimize the number of polygons or triangles, ensuring computational efficiency.
+\end{itemize}
+
+However, achieving all these objectives simultaneously is challenging. Traditional methods like Marching Cubes can generate consistent meshes but often fail to preserve sharp features, as discussed in Section \ref{Marching-Cubes}. The Dual Contouring algorithm addresses some limitations by preserving sharp features but can struggle with thin features, as explained in Section \ref{Dual-Contouring}.
+
+\subsection{The Dual Marching Cubes Solution} 
+
+Recognizing the strengths and weaknesses of Marching Cubes and Dual Contouring, the Dual Marching Cubes algorithm emerges as a comprehensive solution. By combining the consistent meshing capabilities of Marching Cubes with the sharp feature preservation of Dual Contouring, Dual Marching Cubes aims to generate high-quality meshes that are both accurate and computationally efficient.
+
+\subsection{The Essence of Dual Marching Cubes}
+
+At the heart of the Dual Marching Cubes algorithm lies the dual grid. This grid is constructed by connecting the Quadratic Error Function minimizer points generated during the Dual Contouring process. The dual grid bridges the consistent meshing capabilities of Marching Cubes and the sharp feature preservation of Dual Contouring. By leveraging this dual grid, Dual Marching Cubes can generate meshes that capture the intricate details of the scalar field while ensuring computational efficiency.
+
+\subsection{Implementation of DC and DMC} 
+
+Recognizing the challenges and the potential of Dual Contouring and Dual Marching Cubes, both algorithms were implemented in this work. The implementation aimed to address the known limitations of each algorithm while leveraging their strengths. The subsequent sections delve into the intricacies of this implementation, highlighting the software tools used, the data structures employed, and the validation and testing approach adopted.
+
+\subsection{Summary}
+
+This section laid the groundwork for understanding the complexities involved in isosurface extraction, a critical operation in medical imaging to computational fluid dynamics. The primary challenge lies in generating an accurate and computationally efficient mesh. Traditional methods like Marching Cubes and Dual Contouring offer partial solutions but have limitations.
+
+The Dual Marching Cubes algorithm is introduced as a comprehensive solution that combines the strengths of both Marching Cubes and Dual Contouring. It leverages a dual grid system to balance mesh consistency and feature preservation. Implementing these algorithms, particularly Dual Marching Cubes forms the core of the thesis, which aims to address the challenges outlined here.
+
+The subsequent sections will delve deeper into the implementation details of the Quadratic Error Function, the software tools utilized, and the approaches taken to overcome the challenges in calculating the Quadratic Error Function.
+
+\section{Data Structures} \label{Data-Structures}
+
+Implementing the Dual Marching Cubes algorithm and integrating it with the Intel Embree API necessitated the design of specific data structures to store and process the required data efficiently. This section provides an overview of these structures and their significance in the algorithm. Below, we delve into each of these data structures, elucidating their design and purpose in the context of the algorithm.
+
+\subsection{CartesianMeshIntersectionData}
+
+The structure \ref{lst:CartesianMeshIntersectionData} is pivotal for the ray tracing process. Whenever a ray intersects with a geometry, the \texttt{embreeHitFilter} function is invoked, populating the CartesianMeshIntersectionData structure with intersection details.
+
+\vspace{2mm}
+\begin{lstlisting}[language=C++, caption=CartesianMeshIntersectionData structure, label=lst:CartesianMeshIntersectionData]
+struct CartesianMeshIntersectionData
+{
+    unsigned int hitCount;  // Count of intersections
+    float lastDistance;  // Distance to the last intersection
+    unsigned int lastPrimID;  // Primitive ID of the last intersection
+    std::vector<vector3> hitPoints;  // Vector storing the intersection points
+    std::vector<vector3> hitNormals;  // Vector storing the normals at the intersection points
+};
+\end{lstlisting}
+
+
+\subsection{PrimalGridCell} \label{PrimalGridCell}
+
+The \texttt{PrimalGridCell} structure (Listing \ref{lst:PrimalGridCell}) represents each cell of the primal grid used in the Dual Contouring process. It stores intersection points, normals, and other essential data for each cell.
+
+\vspace{2mm}
+\begin{lstlisting}[language=C++, caption=PrimalGridCell structure, label=lst:PrimalGridCell]
+struct PrimalGridCell 
+{
+    std::vector<vector3> hitPoints;  // Vector storing the intersection points within the cell
+    std::vector<vector3> hitNormals; // Vector storing the normals at the intersection points within the cell
+    vector3 cellMinPoint; // Minimum point (corner) of the cell
+    vector3 cellMaxPoint; // Maximum point (corner) of the cell
+    vector3 averagePoint; // Average point of the cell
+    vector3 QEFPoint;  // Point that minimizes the QEF within the cell
+};
+\end{lstlisting}
+
+
+This structure is utilized as a 3D mesh, with each cell storing the intersection details pertinent to its region.
+
+\subsection{DualGridCell} \label{DualGridCell}
+
+The \texttt{DualGridCell} structure (Listing \ref{lst:DualGridCell}) represents each cell of the dual grid. The vertices of the dual grid are the QEF points, which are crucial for the Dual Marching Cubes algorithm.
+
+\vspace{2mm}
+\begin{lstlisting}[language=C++, caption=DualGridCell structure, label=lst:DualGridCell]
+struct DualGridCell
+{
+    std::vector<vector3> vertices;  // Vector storing the eight vertices of the dual grid cell
+    std::vector<double> scalarFieldValues;  // Vector storing the scalar field values at each vertex
+    unsigned int cubeIndex;  // Index representing the cube configuration based on the scalar field
+
+    DualGridCell() : vertices(8, vector3::Empty()), scalarFieldValues(8, 0.0), cubeIndex(0) {}  // Constructor initializing the vectors and cube index
+};
+\end{lstlisting}
+
+This structure is also used as a 3D mesh, with each cell storing the vertices and scalar field values pertinent to its region. The scalar field value at a given vertex indicates whether that vertex is inside (represented by a value of 1.0) or outside (represented by a value of 0.0) a particular shape or boundary. This distinction is essential for the algorithm, as it determines how the mesh contours around the shape. The cubeIndex is an integral representation of the cell's configuration based on these scalar field values. It plays a crucial role in determining the triangulation pattern for the cell. A more detailed explanation of how these values are populated and their significance can be found in Section \ref{populating-dual-grid}.
+
+
+\subsection{MeshLines and PaddedMeshLines} \label{meshLines}
+
+The \texttt{meshLines} represent the discrete lines or divisions within the grid, forming the skeleton of the 3D mesh. These lines are crucial for determining the boundaries of each cell in the grid and for facilitating the traversal and processing of the grid's data.
+
+\noindent \begin{itemize}
+\item \textbf{meshLinesX, meshLinesY, and meshLinesZ} 
+    
+These represent the divisions in the X, Y, and Z directions, respectively. They define the structure of the primal grid and dictate how the data is segmented within the 3D space.
+
+\end{itemize}
+
+\noindent However, when working with 3D grids, boundary cases can pose challenges. These are scenarios where a computation or operation is at the edge or limit of the grid. Handling boundary cases often requires additional logic or conditions, which can complicate the algorithm and potentially slow its execution.
+
+\noindent \begin{itemize}
+\item \textbf{paddedMeshLinesX, paddedMeshLinesY, and paddedMeshLinesZ} 
+
+To address the issue with boundaries, \texttt{paddedMeshLines} are introduced. The \texttt{paddedMeshLines} are essentially the \texttt{meshLines} but with an added layer or "padding" in each direction. This padding helps avoid boundary cases by ensuring that all operations are safely within the bounds of the grid.
+
+These represent the padded divisions in the X, Y, and Z directions. The padding is achieved by adding one step in each direction to the original \texttt{meshLines}.
+
+\end{itemize}
+
+\subsubsection{Advantages of Using PaddedMeshLines}
+
+\begin{itemize}
+    \item \textbf{Simplified Logic:} By avoiding boundary cases, the logic is more straightforward, reducing the chances of errors.
+    \item \textbf{Performance:} Without constantly checking for boundary conditions, the algorithm can run more efficiently.
+    \item \textbf{Flexibility:} The padding provides a buffer, ensuring that even if data points are close to the edge, they can be processed without special conditions.
+    \item \textbf{Consistency:} All cells, including those at the boundaries, are treated uniformly, ensuring consistent results across the grid.
+\end{itemize}
+
+In essence, while \texttt{meshLines} provide the fundamental structure of the 3D grid, the \texttt{paddedMeshLines} offer an enhanced framework that simplifies the processing and ensures consistent and efficient operations throughout the grid.
+
+\subsection{Nested Vector Mesh Representation}
+
+For both the primal and dual grids, a 3D mesh representation is essential to store and process the data efficiently. This 3D mesh is realized using a nested vector list, essentially a 2D vector list extended to represent three dimensions.
+
+\subsubsection{Primal Grid Mesh} \label{Primal-Grid-Mesh}
+
+The primal grid's 3D mesh is constructed using a nested vector list (Listing \ref{lst:primalGrid}), where each cell of the mesh is an instance of the \texttt{PrimalGridCell} structure. This nested structure allows for efficient traversal and data access, ensuring that the algorithm can quickly retrieve and process the intersection details for each cell.
+
+\vspace{1mm}
+\begin{lstlisting}[language=C++, caption=3D Mesh Representation Using Primal Grid Cells, label=lst:primalGrid]
+std::vector<std::vector<std::vector<PrimalGridCell>>> primalGrid(
+    meshLinesX.size() - 1,
+    std::vector<std::vector<PrimalGridCell>>(
+        meshLinesY.size() - 1, 
+        std::vector<PrimalGridCell>(meshLinesZ.size() - 1)
+    )
+);
+\end{lstlisting}
+
+\subsubsection{Dual Grid Mesh} \label{Dual-Grid-Mesh}
+
+Similarly, the dual grid's 3D mesh is also constructed using a nested vector list (Listing \ref{lst:dualGrid}). Each cell of this mesh is an instance of the \texttt{DualGridCell} structure. This representation ensures that the vertices and scalar field values for each cell are stored efficiently and can be accessed rapidly during the algorithm's execution.
+
+\vspace{2mm}
+\begin{lstlisting}[language=C++, caption=3D Mesh Representation Using Dual Grid Cells, label=lst:dualGrid]
+std::vector<std::vector<std::vector<DualGridCell>>> dualGrid(
+    paddedMeshLinesX.size() - 1,
+    std::vector<std::vector<DualGridCell>>(
+        paddedMeshLinesY.size() - 1,
+        std::vector<DualGridCell>(paddedMeshLinesZ.size() - 1)
+    )
+);
+\end{lstlisting}
+
+\subsubsection{Advantages and Limitations of Nested Vector Mesh Representation}
+
+Using nested vector lists for the 3D mesh representation offers several advantages:
+
+\begin{itemize}
+    \item \textbf{Dynamic Resizing:} Unlike arrays, vectors in C++ can be resized dynamically, offering flexibility in handling varying dataset sizes.
+    \item \textbf{Direct Indexing:} Accessing a specific cell using its 3D coordinates (i, j, k) is straightforward without the need for any conversion function.
+    \item \textbf{Intuitive Structure:} The 3D nested vector structure is more intuitive and aligns well with the spatial nature of the data. It's easier to visualize and understand.
+\end{itemize}
+
+However, it's important to note the limitations:
+
+\begin{itemize}
+    \item \textbf{Memory Overhead:} Nested vector structures can be memory-intensive, especially for large datasets. Each vector has its own memory overhead, and nesting them multiplies this overhead.
+    \item \textbf{Cache Inefficiency:} Due to the non-contiguous memory allocation of nested vectors, cache misses can occur more frequently, leading to performance degradation.
+    \item \textbf{Complex Iteration:} Iterating over the entire grid requires nested loops, which can be cumbersome and less efficient.
+\end{itemize}
+
+\subsubsection{Data Structure Optimization for Future Work} \label{Data-Structure-Optimization}
+
+Another promising avenue for optimization lies in the data structure used to represent the grid. While the current 3D nested vector structure is intuitive and aligns well with the spatial nature of the data, it may not be the most efficient regarding memory access patterns and cache coherency. Transitioning to a single-dimensional array representation can offer performance benefits, especially when iterating over large datasets. 
+
+To illustrate (Listing \ref{lst:1DIndex}), consider the following approach to transition from a 3D nested structure to a single-dimensional array:
+
+\vspace{2mm}
+\begin{lstlisting}[language=C++, caption=Transition from a 3D nested vector structure to a single-dimensional array representation for efficient memory access., label=lst:1DIndex]
+int totalSize = (meshLinesX.size() - 1) * (meshLinesY.size() - 1) * (meshLinesZ.size() - 1);
+
+std::vector<PrimalGridCell> primalGrid1D(totalSize);
+
+int to1DIndex(int i, int j, int k, int Nx, int Ny) {
+    return i + j*Nx + k*Nx*Ny;
+}
+
+// Accessing or modifying a PrimalGridCell at a specific 3D location (i, j, k)
+int index = to1DIndex(i, j, k, meshLinesX.size() - 1, meshLinesY.size() - 1);
+PrimalGridCell& cell = primalGrid1D[index];
+\end{lstlisting}
+
+In summary, while the nested vector list representation for the 3D meshes of both primal and dual grids provides certain advantages, it's essential to be aware of its inefficiencies. The proposed optimizations, as outlined above, can address these limitations, ensuring a more efficient and performant implementation of the Dual Marching Cubes algorithm.
+
+\subsection{Summary}
+
+The data structures and functions described above form the backbone of the implementation. They ensure efficient storage and processing of intersection data, facilitating the generation of high-quality meshes that accurately represent the underlying scalar field.
+
+
+\section{Ray Tracing with Intel Embree}
+
+The Intel Embree API is a high-performance ray-tracing kernel library. As previously discussed in Section \ref{Intel-Embree-Overview} Chapter \ref{Chapter2}, it offers optimized methods for computing ray-primitive intersections tailored to harness the capabilities of modern CPU architectures.
+
+\subsection{Reasons for Choosing Intel Embree}
+The decision to integrate Intel Embree into this project was driven by several factors:
+\begin{itemize}
+    \item \textbf{Performance:} Embree's high-performance ray tracing kernels ensure rapid and precise calculations, crucial for the isosurface extraction process.
+    \item \textbf{Accuracy:} Given the need for precise ray tracing in isosurface extraction, Embree's design, which emphasizes practical ray-primitive intersection computations, became a natural choice.
+    \item \textbf{Integration:} The API's modular design facilitates seamless integration into various applications, allowing developers to leverage its optimized ray tracing capabilities.
+\end{itemize}
+
+\subsection{Using Intel Embree in C++}
+In this section, we delve into the specifics of integrating the Intel Embree API into our C++ project. The integration process is broken down into several key steps, each of which is crucial in enabling high-performance ray tracing for our isosurface extraction process.
+
+\subsubsection{Setting up Embree} 
+The \texttt{setupEmbree} function (Listing \ref{lst:setupEmbree}) initializes the Embree device and scene. It then creates a geometry of type triangle, populates the vertex and index buffers, and commits the geometry to the scene.
+
+\vspace{2mm}
+\begin{lstlisting}[language=C++, caption={Initialization and setup of the Embree ray tracing library using the \texttt{setupEmbree} function.}, label=lst:setupEmbree]
+// Function to set up Embree for ray tracing
+void setupEmbree(EntityFacetData* facetData, bool multipleIntersections)
+{
+    // Initialize the Embree device and scene
+    device = rtcNewDevice(NULL);
+    scene = rtcNewScene(device);
+    
+    // Create a triangle geometry
+    geom = rtcNewGeometry(device, RTC_GEOMETRY_TYPE_TRIANGLE);
+
+    // Get the number of nodes and triangles from the facet data
+    size_t numberNodes = facetData->getNodeVector().size();
+    size_t numberTriangles = facetData->getTriangleList().size();
+
+    // Allocate and populate the vertex buffer
+    float* vb = (float*)rtcSetNewGeometryBuffer(geom, RTC_BUFFER_TYPE_VERTEX, 0, RTC_FORMAT_FLOAT3, 3 * sizeof(float), numberNodes);
+    for (int iN = 0; iN < numberNodes; iN++)
+    {
+        vb[iN * 3] = (float)facetData->getNodeVector()[iN].getCoord(0);
+        vb[iN * 3 + 1] = (float)facetData->getNodeVector()[iN].getCoord(1);
+        vb[iN * 3 + 2] = (float)facetData->getNodeVector()[iN].getCoord(2);
+    }
+
+    // Allocate and populate the index buffer
+    unsigned* ib = (unsigned*)rtcSetNewGeometryBuffer(geom, RTC_BUFFER_TYPE_INDEX, 0, RTC_FORMAT_UINT3, 3 * sizeof(unsigned), numberTriangles);
+    size_t triangleIndex = 0;
+    for (auto triangle : facetData->getTriangleList())
+    {
+        ib[triangleIndex++] = (unsigned int)triangle.getNode(0);
+        ib[triangleIndex++] = (unsigned int)triangle.getNode(1);
+        ib[triangleIndex++] = (unsigned int)triangle.getNode(2);
+    }
+
+    // If multiple intersections are enabled, set the hit filter function and user data
+    if (multipleIntersections)
+    {
+        rtcSetGeometryIntersectFilterFunction(geom, embreeHitFilter);
+        rtcSetGeometryUserData(geom, &intersectionData);
+    }
+
+    // Commit the geometry, attach it to the scene, and release the geometry
+    rtcCommitGeometry(geom);
+    rtcAttachGeometry(scene, geom);
+    rtcReleaseGeometry(geom);
+    
+    // Commit the scene to finalize the setup
+    rtcCommitScene(scene);
+}
+\end{lstlisting}
+    
+This function primarily deals with the initialization and setup of Embree for ray tracing. It begins by initializing the Embree device and scene. A triangle geometry is created, essential for the ray tracing process. The vertex and index buffers are then populated using the provided \texttt{facetData} data. If the \texttt{multipleIntersections} flag is set, a hit filter function is applied to filter out irrelevant intersections. Finally, the geometry is committed, attached to the scene, and the scene is committed to finalizing the setup.
+
+\subsubsection{Ray Casting} \label{ray-casting} 
+The \texttt{fireRaysAlongMeshLines} function (Listing \ref{lst:fireRaysAlongMeshLines}) fires rays along the mesh lines in the X-Y, X-Z, and Y-Z planes. For each ray, the \texttt{castRay} function (Listing \ref{lst:castRay}) is called. This ensures comprehensive coverage of the mesh space to detect intersections.
+
+\vspace{2mm}
+\begin{lstlisting}[language=C++, caption={Firing rays along mesh lines in different planes using the fireRaysAlongMeshLines function.}, label=lst:fireRaysAlongMeshLines] 
+void fireRaysAlongMeshLines(EntityMeshCartesianData* meshData)
+{
+    // Retrieve mesh lines in X, Y, and Z directions
+    std::vector<double> meshLinesX = meshData->getMeshLinesX();
+    std::vector<double> meshLinesY = meshData->getMeshLinesY();
+    std::vector<double> meshLinesZ = meshData->getMeshLinesZ();
+    
+    // Fire a ray along each mesh line on X-Y plane
+    for (int i = 0; i < meshLinesX.size(); i++)
+    {
+        for (int j = 0; j < meshLinesY.size(); j++)
+        {
+            double x = meshLinesX[i];
+            double y = meshLinesY[j];
+            double z = meshLinesZ[0] - 1.0;
+            double dx = 0.0;
+            double dy = 0.0;
+            double dz = 1.0;
+            castRay(scene, (float)x, (float)y, (float)z, (float)dx, (float)dy, (float)dz);
+        }
+    }
+
+    //fire a ray along each mesh line on X-Z plane
+    for (int i = 0; i < meshLinesX.size(); i++)
+    {
+        for (int j = 0; j < meshLinesZ.size(); j++)
+        {
+            double x = meshLinesX[i];
+            double y = meshLinesY[0] - 1.0;
+            double z = meshLinesZ[j];
+            double dx = 0.0;
+            double dy = 1.0;
+            double dz = 0.0;
+            castRay(scene, (float)x, (float)y, (float)z, (float)dx, (float)dy, (float)dz);
+        }
+    }
+
+    //fire a ray along each mesh line on Y-Z plane
+    for (int i = 0; i < meshLinesY.size(); i++)
+    {
+        for (int j = 0; j < meshLinesZ.size(); j++)
+        {
+            double x = meshLinesX[0] - 1.0;
+            double y = meshLinesY[i];
+            double z = meshLinesZ[j];
+            double dx = 1.0;
+            double dy = 0.0;
+            double dz = 0.0;
+            castRay(scene, (float)x, (float)y, (float)z, (float)dx, (float)dy, (float)dz);
+        }
+    }
+}
+\end{lstlisting}
+    
+The ray casting process is handled by the \texttt{castRay} function, which constructs a ray with a given origin and direction and checks for intersections with the scene's geometry using Embree's \texttt{rtcIntersect1} function.
+
+\vspace{2mm}
+\begin{lstlisting}[language=C++, caption={Ray casting using the \texttt{castRay} function to check for intersections with the scene's geometry.}, label=lst:castRay]
+void castRay(RTCScene scene, float ox, float oy, float oz, float dx, float dy, float dz)
+{
+    // Initialize the rayhit structure
+    struct RTCRayHit rayhit;
+    rayhit.ray.org_x = ox;
+    rayhit.ray.org_y = oy;
+    rayhit.ray.org_z = oz;
+    rayhit.ray.dir_x = dx;
+    rayhit.ray.dir_y = dy;
+    rayhit.ray.dir_z = dz;
+    rayhit.ray.tnear = 0;
+    rayhit.ray.tfar = std::numeric_limits<float>::infinity();
+    rayhit.hit.geomID = RTC_INVALID_GEOMETRY_ID;
+
+    // Reset intersection data
+    intersectionData.hitCount = 0;
+    intersectionData.lastDistance = 0.0f;
+    intersectionData.lastPrimID = 0;
+
+    // Initialize the intersection context
+    RTCIntersectContext context;
+    rtcInitIntersectContext(&context);
+
+    // Check for intersections with the scene's geometry
+    rtcIntersect1(scene, &context, &rayhit);
+
+    // If there are valid intersections, display the hit points and distance
+    if (!intersectionData.hitPoints.empty() && intersectionData.hitCount != 0 && ((intersectionData.hitCount / 2) * 2 == intersectionData.hitCount))
+    {
+        // Display messages for debugging purposes (commented out in this version)
+    }
+}
+\end{lstlisting}
+    
+The \texttt{castRay} function is responsible for constructing a ray based on the provided origin (`ox`, `oy`, `oz`) and direction (`dx`, `dy`, `dz`). The ray is then used to check for intersections with the scene's geometry. If valid intersections are found, the function can display the entry and exit hit points, as well as the last distance between intersections (though this display functionality is commented out in the provided version).
+
+\subsubsection{Ray Intersection Filtering} 
+The \texttt{embreeHitFilter} function (Listing \ref{lst:embreeHitFilter}) is utilized to filter ray hits based on specific criteria. It ensures that only relevant intersections are considered and stores the hit points and normals for further processing.
+
+\vspace{2mm}
+\begin{lstlisting}[language=c++, caption={Filtering ray intersections using the \texttt{embreeHitFilter} function.}, label=lst:embreeHitFilter]
+void embreeHitFilter(const struct RTCFilterFunctionNArguments* args)
+{
+    // Reject the hit such that further hits are detected
+    args->valid[0] = 0; 
+
+    RTCRay* ray = (RTCRay*)args->ray;
+    RTCHit* hit = (RTCHit*)args->hit;
+
+    CartesianMeshIntersectionData* intersectionData = (CartesianMeshIntersectionData*)args->geometryUserPtr;
+ 
+    assert(intersectionData != nullptr);
+ 
+    // Check whether we have a new hit
+    if (fabs(intersectionData->lastDistance - ray->tfar) > 1e-4)
+    {
+        assert(intersectionData->lastPrimID != hit->primID);
+
+        // We have a new intersection point
+        intersectionData->hitCount++;
+        intersectionData->lastDistance = ray->tfar;
+        intersectionData->lastPrimID = hit->primID;
+
+        vector3 hitPoint;
+        hitPoint.setX(ray->org_x + ray->dir_x * ray->tfar);
+        hitPoint.setY(ray->org_y + ray->dir_y * ray->tfar);
+        hitPoint.setZ(ray->org_z + ray->dir_z * ray->tfar);
+
+        intersectionData->hitPoints.push_back(hitPoint);
+
+        vector3 normal;
+        normal.setX(hit->Ng_x);
+        normal.setY(hit->Ng_y);
+        normal.setZ(hit->Ng_z);
+
+        float length = std::sqrt(normal.getX() * normal.getX() + normal.getY() * normal.getY() + normal.getZ() * normal.getZ());
+        normal.setX(normal.getX() / length);
+        normal.setY(normal.getY() / length);
+        normal.setZ(normal.getZ() / length);
+
+        intersectionData->hitNormals.push_back(normal);
+    }
+    else
+    {
+        //	add code to handle duplicate hit
+    }
+}
+\end{lstlisting}
+
+This section elucidated the integration of the Intel Embree API into our project, emphasizing its pivotal role in high-performance ray tracing. Opting for Embree was driven by its unparalleled performance, precision, and seamless integration capabilities. As a result, our project has greatly benefited, achieving faster and more accurate ray tracing, which in turn bolsters the efficiency of the isosurface extraction process.
+
+
+\section{Summary}
+This chapter delved into the intricacies of ray tracing using the Intel Embree library and the foundational data structures that support our isosurface extraction algorithms. We explored the reasons for choosing Intel Embree, its integration with C++, and the advantages it brings to the table in terms of performance and accuracy.
+
+The chapter also provided a comprehensive overview of the data structures, from the CartesianMeshIntersectionData to the nested vector mesh representation. These structures are pivotal in ensuring efficient and accurate mesh generation, laying the groundwork for the algorithms we will explore.
+
+Transitioning from ray tracing and foundational data structures, Chapter \ref{Chapter5} delves deeper into the mathematical realm, exploring the Quadratic Error Function in detail. This function is a cornerstone of the Dual Contouring and Dual Marching Cubes algorithms, playing a crucial role in determining optimal vertex placements within grid cells and ensuring the generated mesh closely adheres to the underlying surface. With the foundational knowledge from Chapter \ref{Chapter4}, the stage is set for a comprehensive understanding of the QEF's methodology, its challenges, and its practical implementation.

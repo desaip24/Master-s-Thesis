@@ -1,0 +1,33 @@
+\chapter{Conclusion and Future Work} \label{Chapter7}
+
+The primary objective of this thesis was to delve deep into the intricacies of isosurface extraction, with a particular focus on the Dual Contouring and Dual Marching Cubes algorithms. Through a comprehensive exploration, the thesis aimed to understand the strengths, limitations, and practical applications of these algorithms and how they can be optimized for various scenarios.
+
+\section{Conclusion}
+
+This thesis began with a comprehensive introduction, framing the problem, delineating the scope, and setting the research objectives. Fundamental concepts are pivotal to understanding isosurface extraction, including the intricacies of Hermite data and the challenges of conformal meshing, were elaborated upon. A thorough literature review followed, comparing various algorithms from the foundational Marching Squares to the intricate Dual Marching Cubes.
+
+The integration of ray tracing was explored, focusing on the Intel Embree API and its role in mesh data structures. The Quadratic Error Function, facilitated by the Eigen Library, was dissected, leading to an equation simplification and a discussion on its minimization challenges. The thesis culminated in a detailed implementation of the Dual Contouring and Dual Marching Cubes algorithms. It was accompanied by a discussion of the results, emphasizing the quality of the generated meshes and their visual fidelity.
+
+The exploration underscored the unique strengths and challenges of both DC and DMC algorithms. While DC shines in preserving sharp features, DMC, building on the strengths of previous algorithms, efficiently represents thin structures with fewer polygons. In essence, both algorithms offer valuable tools in the toolbox of isosurface extraction. The choice between them hinges on the specific requirements and constraints of the application at hand.
+
+However, it's essential to note that the current implementation is far from perfect. The nested loop iterations could be optimized further, and the data structures used can be improved. Transitioning from a 3D nested data structure to a single-dimensional array format with efficient indexing could enhance performance and memory usage. Additionally, the current QEF implementation occasionally produces points outside the desired cell, leading to a patchwork solution of clamping these points to the boundary. This approach, while functional, is not ideal. Furthermore, the algorithm's performance with nested surfaces remains untested due to time constraints.
+
+\section{Future Work}
+
+The exploration of the DC and DMC algorithms has opened up a plethora of avenues for future research and development:
+
+\begin{itemize}
+    \item \textbf{Data Structure Optimization:} As discussed in Section \ref{Data-Structure-Optimization}, there's potential for significant optimization in the data structure used to represent the grid. Transitioning from the current 3D nested vector structure to a more efficient representation, such as a single-dimensional array, can offer performance benefits. For a detailed discussion and proposed solutions, refer to Section \ref{Data-Structure-Optimization}.
+
+    \item \textbf{Improved QEF Implementation:} Addressing the current limitations of the QEF implementation, especially the issue of points lying outside the desired cell, is crucial. A more robust solution is needed than merely clamping the points to the boundary.
+
+    \item \textbf{Adaptive Grids:} Future research could delve into adaptive grids, such as octree, that refine in regions of interest. This could lead to more efficient representations and reduced computational demands.
+    
+    \item \textbf{Optimization Techniques:} There is room for optimization, especially regarding computational efficiency. Exploring parallel processing or harnessing the power of GPUs could significantly reduce the computational time.
+
+    \item \textbf{Real-time Applications:} Adapting these algorithms for real-time scenarios, such as gaming or interactive simulations, is a challenging yet rewarding avenue. This would involve optimizing the algorithms to work within the constraints of real-time rendering.
+    
+    \item \textbf{Machine Learning Integration:} Integrating machine learning techniques to predict optimal vertex placements or to guide the isosurface extraction process could be a promising direction.
+\end{itemize}
+
+\noindent In conclusion, exploring the Dual Contouring and Dual Marching Cubes algorithms has been thorough and insightful. The world of isosurface extraction is vast, and the horizon is dotted with opportunities for innovation, optimization, and novel applications. The journey has just begun.
